@@ -8,8 +8,31 @@
 #include "sql/engine/expr/ob_expr_ai/ob_ai_func_client.h"
 #include <cstdio>
 #include <string>
+#include <map>
+#include <cstdlib>
+#include <cstring>
 using namespace oceanbase::common;
 using namespace oceanbase::share;
+// Invalidating freed bytes exposes ownership errors masked by an arena.
+class PoisonAllocator : public ObIAllocator
+{
+public:
+  void *alloc(const int64_t size) override
+  {
+    void *ptr = std::malloc(size);
+    if (ptr != nullptr) blocks_[ptr] = size;
+    return ptr;
+  }
+  void *alloc(const int64_t size, const ObMemAttr &) override { return alloc(size); }
+  void free(void *ptr) override
+  {
+    auto block = blocks_.find(ptr);
+    if (block != blocks_.end()) std::memset(ptr, '#', block->second);
+  }
+  ~PoisonAllocator() { for (const auto &block : blocks_) std::free(block.first); }
+private:
+  std::map<void *, int64_t> blocks_;
+};
 static int checks = 0;
 static int failures = 0;
 static void expect(bool value, const char *name)
@@ -105,6 +128,24 @@ int main()
   render("literal braces", R"({"template":"{abc} {} {{ }}", "args":[]})", "{abc} {} {{ }}");
   render("index overflow", R"({"template":"{18446744073709551616}","args":[]})", "", OB_INVALID_ARGUMENT);
   render("long repeated replacement", "{\"template\":\"{0}{0}{0}\",\"args\":[\"" + std::string(100000, 'x') + "\"]}", std::string(300000, 'x'));
+  for (const char *text : {"null", "[]", "\"not an object\""}) {
+    ObArenaAllocator allocator;
+    ObIJsonBase *root = nullptr;
+    ObString json(text);
+    ObJsonBaseFactory::get_json_base(&allocator, json, ObJsonInType::JSON_TREE,
+                                    ObJsonInType::JSON_TREE, root);
+    ObOpenAIUtils::ObOpenAIEmbed provider;
+    ObIJsonBase *result = nullptr;
+    expect(provider.parse_output(allocator, static_cast<ObJsonObject *>(root), result) != OB_SUCCESS,
+           "non-object response is rejected without crashing");
+  }
+  {
+    PoisonAllocator allocator;
+    ObJsonInt number(42);
+    ObString text;
+    expect(ObAIFuncJsonUtils::print_json_to_str(allocator, &number, text) == OB_SUCCESS &&
+           text == ObString("42"), "serialized JSON survives temporary buffer destruction");
+  }
   std::printf("TOTAL %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

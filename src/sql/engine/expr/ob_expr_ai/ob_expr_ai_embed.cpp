@@ -109,6 +109,9 @@ int ObExprAIEmbed::eval_ai_embed(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &re
     ObJsonInt *dim_json = nullptr;
     ObJsonObject *config = nullptr;
     if (OB_FAIL(ret)) {
+    } else if (OB_NOT_NULL(arg_dim) && arg_dim->is_null()) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_USER_ERROR(OB_INVALID_ARGUMENT, "ai_embed, dimension must be a non-NULL positive integer");
     } else if (OB_NOT_NULL(arg_dim)) {
       dim = arg_dim->get_int();
       if (dim <= 0) {
