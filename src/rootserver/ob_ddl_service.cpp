@@ -27,6 +27,7 @@
 #include "query/session/ob_inner_sql_connection_access.h"
 #include "share/ob_ddl_common.h"
 #include "share/inner_table/ob_inner_table_schema_constants.h"
+#include "share/inner_table/ob_inner_table_schema.h"
 #include "sql/printer/ob_schema_printer.h"
 #include "share/autoincrement/ob_i_tablet_autoincrement_admin.h"
 #include "storage/blocksstable/index_block/ob_index_block_util.h"
@@ -7759,7 +7760,26 @@ int ObDDLService::add_new_column_to_table_schema(
   } else {
     int64_t max_used_column_id = new_table_schema.get_max_used_column_id();
     
-    if (is_inner_table(new_table_schema.get_table_id())
+    // The SQL grammar cannot specify an internal column ID. For this additive
+    // endpoint upgrade, use the canonical ID from the compiled schema. The
+    // regular next-ID check below still validates the existing table layout.
+    if (config::enable_sys_table_ddl()
+        && new_table_schema.get_table_id() == OB_ALL_AI_MODEL_ENDPOINT_TID
+        && alter_column_schema.get_column_id() == OB_INVALID_ID
+        && alter_column_schema.get_column_name_str().case_compare("max_concurrency") == 0) {
+      ObTableSchema canonical_schema;
+      if (OB_FAIL(ObInnerTableSchema::all_ai_model_endpoint_schema(canonical_schema))) {
+        LOG_WARN("failed to load canonical endpoint schema", KR(ret));
+      } else {
+        const ObColumnSchemaV2 *canonical_column = canonical_schema.get_column_schema("max_concurrency");
+        if (OB_NOT_NULL(canonical_column)
+            && canonical_column->get_data_type() == alter_column_schema.get_data_type()) {
+          alter_column_schema.set_column_id(canonical_column->get_column_id());
+        }
+      }
+    }
+    if (OB_FAIL(ret)) {
+    } else if (is_inner_table(new_table_schema.get_table_id())
         && (OB_INVALID_ID == alter_column_schema.get_column_id()
         || alter_column_schema.get_column_id() != max_used_column_id + 1)) {
       // 225 is barrier version, after this adding column in system table need specify column_id

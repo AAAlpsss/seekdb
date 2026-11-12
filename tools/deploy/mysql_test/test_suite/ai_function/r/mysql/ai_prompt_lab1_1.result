@@ -1,0 +1,81 @@
+select json_unquote(json_extract(ai_prompt('{1}/{0}/{1}', 'a', 'b'), '$.template')) = '{1}/{0}/{1}' as ok;
+ok
+1
+select json_length(ai_prompt('{0}/{9}', 'a'), '$.args') = 1 as ok;
+ok
+1
+select json_unquote(json_extract(ai_prompt('{abc} {} {{ }} {99999999999999999999999999999}'), '$.template')) = '{abc} {} {{ }} {99999999999999999999999999999}' as ok;
+ok
+1
+select json_unquote(json_extract(ai_prompt('no arguments'), '$.template')) = 'no arguments' and json_length(ai_prompt('no arguments'), '$.args') = 0 as ok;
+ok
+1
+select json_unquote(json_extract(ai_prompt('{0}', ''), '$.args[0]')) = '' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', json_object('k',2)), '$.args[0]')) = 'OBJECT' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', json_array(1,true)), '$.args[0]')) = 'ARRAY' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', cast('42' as json)), '$.args[0]')) = 'INTEGER' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', cast('true' as json)), '$.args[0]')) = 'BOOLEAN' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', cast('null' as json)), '$.args[0]')) = 'NULL' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', cast('1.5' as json)), '$.args[0]')) = 'DOUBLE' as ok;
+ok
+1
+select json_type(json_extract(ai_prompt('{0}', cast('"hello"' as json)), '$.args[0]')) = 'STRING' as ok;
+ok
+1
+select json_extract(ai_prompt('{0}', json_object('k',json_array(1,true))), '$.args[0]') = json_object('k',json_array(1,true)) as ok;
+ok
+1
+select json_extract(ai_prompt('{0}', ai_prompt('内层{0}', '😀')), '$.args[0]') = ai_prompt('内层{0}', '😀') as ok;
+ok
+1
+set @prompt_lab_special = concat('中文😀', char(34), char(92), char(10), char(0), '{0}');
+select binary json_unquote(json_extract(ai_prompt(@prompt_lab_special), '$.template')) = binary @prompt_lab_special as ok;
+ok
+1
+select binary json_unquote(json_extract(ai_prompt('{0}', @prompt_lab_special), '$.args[0]')) = binary @prompt_lab_special as ok;
+ok
+1
+create table t_ai_prompt_lab1_1 (id int primary key, tmpl longtext, arg longtext, txt text, tb tinyblob, mb mediumblob, j json);
+insert into t_ai_prompt_lab1_1 values (1, concat(repeat('中',70000),'{1}/{0}/{1}'), repeat('😀',70000), repeat('文',10000), 'tiny', repeat('blob',20000), json_object('k',json_array(1,true))), (2,null,null,null,null,null,null);
+select binary json_unquote(json_extract(ai_prompt(tmpl, arg), '$.template')) = binary tmpl and binary json_unquote(json_extract(ai_prompt(tmpl, arg), '$.args[0]')) = binary arg as ok from t_ai_prompt_lab1_1 where id = 1;
+ok
+1
+select binary json_unquote(json_extract(ai_prompt(txt, txt), '$.template')) = binary txt and binary json_unquote(json_extract(ai_prompt(txt, txt), '$.args[0]')) = binary txt as ok from t_ai_prompt_lab1_1 where id = 1;
+ok
+1
+select json_unquote(json_extract(ai_prompt(tb, tb), '$.template')) = 'tiny' and json_unquote(json_extract(ai_prompt(tb, tb), '$.args[0]')) = 'tiny' as ok from t_ai_prompt_lab1_1 where id = 1;
+ok
+1
+select binary json_unquote(json_extract(ai_prompt(mb, mb), '$.template')) = binary mb and binary json_unquote(json_extract(ai_prompt(mb, mb), '$.args[0]')) = binary mb as ok from t_ai_prompt_lab1_1 where id = 1;
+ok
+1
+select json_extract(ai_prompt('{0}', j), '$.args[0]') = j as ok from t_ai_prompt_lab1_1 where id = 1;
+ok
+1
+select ai_prompt(null);
+select ai_prompt('{0}', null);
+select ai_prompt(tmpl) from t_ai_prompt_lab1_1 where id = 2;
+select ai_prompt('{0}', arg) from t_ai_prompt_lab1_1 where id = 2;
+select ai_prompt(txt) from t_ai_prompt_lab1_1 where id = 2;
+select ai_prompt('{0}', j) from t_ai_prompt_lab1_1 where id = 2;
+select ai_prompt('');
+select ai_prompt(1);
+select ai_prompt('{0}', 1);
+select ai_prompt(json_object('k',2));
+select ai_prompt('{0}', cast('2026-01-01' as date));
+select ai_complete('unused_lab1_1_model', ai_prompt('{9}', 'x'));
+select ai_complete('unused_lab1_1_model', ai_prompt('{18446744073709551616}', 'x'));
+select ai_complete('unused_lab1_1_model', ai_prompt('{999999999999999999999999999999999999999}', 'x'));
+drop table t_ai_prompt_lab1_1;
